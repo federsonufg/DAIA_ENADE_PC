@@ -2,10 +2,12 @@ import streamlit as st
 from openai import OpenAI
 
 # Show title and description.
-st.title("📄 Document question answering")
+st.title("📄 ENADE CC 2017 - DAIA")
 st.write(
-    "Upload a document below and ask a question about it – GPT will answer! "
-    "To use this app, you need to provide an OpenAI API key, which you can get [here](https://platform.openai.com/account/api-keys). "
+    "Em 2017, os estudantes de Ciência da Computação fizeram a Prova do Exame Nacional de Desempenho dos Estudantes (ENADE)! "
+)
+st.write(
+    "Esta Prova de Conceito, oferecida pelo DAIA-INF, permite que com o auxílio de um LLM, perguntas interessantes a respeito da Prova sejam feitas e mais..."
 )
 
 # Ask user for their OpenAI API key via `st.text_input`.
