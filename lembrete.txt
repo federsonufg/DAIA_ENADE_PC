@@ -1,0 +1,6 @@
+streamlit run streamlit_app.py --server.enableCORS false --server.enableXsrfProtection false
+
+git add .
+git commit -m "v0."
+git push origin main
+
