@@ -21,47 +21,15 @@ st.markdown("""
 """)
 
 
-# Extração estruturada de questões
-@st.cache_resource
-def extract_questions():
-    questions = {}
-    try:
-        with open("2017 - BCC (OCR).pdf", "rb") as f:
-            pdf = PyPDF2.PdfReader(f)
-            full_text = ""
-            
-            # Concatenar todo o texto
-            for page in pdf.pages:
-                full_text += page.extract_text() + "\n"
-            
-            # Expressão regular para encontrar questões
-            pattern = r'(?:QUESTÃO|Questão) (\d{1,2})[\s\S]*?(?=(?:QUESTÃO|Questão) \d{1,2}|$)'
-            
-            # Encontrar todas as questões
-            matches = re.finditer(pattern, full_text, re.IGNORECASE)
-            
-            for match in matches:
-                q_number = match.group(1)
-                q_text = match.group(0).strip()
-                questions[q_number] = q_text
-                
-    except Exception as e:
-        st.error(f"Erro na extração: {str(e)}")
-    
-    return questions
-
-# Carregar questões
-questoes = extract_questions()
-
 
 # Carregar todos os documentos combinados
 @st.cache_resource
 def load_all_documents():
     docs = {}
     files = {
-        #"Prova": "2017 - BCC (OCR).pdf",
+        "Prova": "2017 - Questoes.pdf",
         "Gabarito (QO)": "2017 - BCC - gb.pdf",
-        "Padrões de Resposta (QD)": "2017 - BCC - PV (OCR).pdf"
+        "Padrões de Resposta (QD)": "2017 - Padroes de Resposta.pdf"
     }
     
     full_text = ""
@@ -154,7 +122,7 @@ with tab1:
         # Montar contexto completo
         contexto = f"""
         CONTEXTO COMPLETO DA PROVA ENADE CC 2017:
-        {documentos_completos[:12000], questoes}... [documento completo carregado]
+        {documentos_completos[:12000]}... [documento completo carregado]
         """
         
         # Montar mensagens para a DeepSeek
