@@ -1,293 +1,304 @@
-import streamlit as st
-import requests
-import json
+#pip install google-genai
+
+import streamlit as st, os, time
+from google import genai
+from google.genai import types
+from PyPDF2 import PdfReader, PdfWriter, PdfMerger
 import os
-import regex as re
-import pandas as pd
-import PyPDF2
-from io import BytesIO
 
-# Configuração da página
-st.set_page_config(page_title="📊 ENADE CC 2017 - DAIA", layout="wide")
+os.environ["GOOGLE_API_KEY"] = st.secrets["GOOGLE_API_KEY"]
 
-# Título e descrição
-st.title("📊 ENADE CC 2017 (DAIA)")
-st.subheader("Sistema Integrado de Análise Pedagógica com IA (Prova de Conceito)")
-st.markdown("""
-**Documentos incluídos:**
-1. Prova ENADE CC 2017
-2. Gabarito das Questões Objetivas [9-35]
-3. Padrões de Resposta das Questões Discursivas [D1-D5]
-""")
-
-
-
-# Carregar todos os documentos combinados
-@st.cache_resource
-def load_all_documents():
-    docs = {}
-    files = {
-        "Prova": "2017 - Questoes.pdf",
-        "Gabarito (QO)": "2017 - BCC - gb.pdf",
-        "Padrões de Resposta (QD)": "2017 - Padroes de Resposta.pdf"
-    }
+def setup_page():
+    st.set_page_config(
+        page_title="	⚡ Voice Chatbot",
+        layout="centered"
+    )
     
-    full_text = ""
-    for name, path in files.items():
-        if os.path.exists(path):
-            with open(path, "rb") as f:
-                pdf = PyPDF2.PdfReader(f)
-                text = f"\n\n--- DOCUMENTO: {name} ---\n\n"
-                text += "\n".join([page.extract_text() for page in pdf.pages])
-                full_text += text + "\n\n"
-        else:
-            st.warning(f"Arquivo não encontrado: {path}")
-    return full_text[:150000]  # Limite para caber no contexto
+    st.header("Chatbot using Gemini 2.0 Flash!" )
 
-# Carregar documentos uma vez no início
-documentos_completos = load_all_documents()
+    st.sidebar.header("Options", divider='rainbow')
+    
+    hide_menu_style = """
+            <style>
+            #MainMenu {visibility: hidden;}
+            </style>
+            """
+    st.markdown(hide_menu_style, unsafe_allow_html=True)
 
-# Função para chamar a DeepSeek API
-def deepseek_chat(messages, api_key, model="deepseek-chat", temperature=0.5, max_tokens=2000):
-    endpoint = "https://api.deepseek.com/v1/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json"
-    }
-    payload = {
-        "model": model,
-        "messages": messages,
-        "temperature": temperature,
-        "max_tokens": max_tokens,
-        "stream": True
-    }
     
-    response = requests.post(endpoint, headers=headers, json=payload, stream=True)
-    
-    if response.status_code != 200:
-        st.error(f"Erro na API: {response.status_code} - {response.text}")
-        return None
-    
-    for line in response.iter_lines():
-        if line:
-            decoded_line = line.decode('utf-8')
-            if decoded_line.startswith("data: "):
-                json_data = decoded_line[6:]
-                if json_data != "[DONE]":
-                    try:
-                        event_data = json.loads(json_data)
-                        if "choices" in event_data and len(event_data["choices"]) > 0:
-                            delta = event_data["choices"][0].get("delta", {})
-                            if "content" in delta:
-                                yield delta["content"]
-                    except json.JSONDecodeError:
-                        pass
+def get_choice():
+    choice = st.sidebar.radio("Choose:", ["Converse with Gemini 2.0",
+                                          "Chat with a PDF",
+                                          "Chat with many PDFs",
+                                          "Chat with an image",
+                                          "Chat with audio",
+                                          "Chat with video"],)
+    return choice
 
-# Interface principal
-with st.sidebar:
-    st.header("🔑 Configuração")
-    api_key = st.text_input("DeepSeek API Key", type="password", help="Obtenha em platform.deepseek.com")
-    model = st.selectbox("Modelo", options=["deepseek-chat", "deepseek-coder"], index=0)
-    temperature = st.slider("Criatividade (temperature)", 0.0, 1.0, 0.3)
-    max_tokens = st.slider("Máximo de tokens", 100, 4096, 2000)
+ 
+def get_clear():
+    clear_button=st.sidebar.button("Start new session", key="clear")
+    return clear_button
+
+     
+def main():
+    choice = get_choice()
     
+    if choice == "Converse with Gemini 2.0":
+        st.subheader("Ask Gemini")
+        clear = get_clear()
+        if clear:
+            if 'message' in st.session_state:
+                del st.session_state['message']
+    
+        if 'message' not in st.session_state:
+            st.session_state.message = " "
         
-    st.divider()
-    if st.button("🔍 Gerar Resumo da Prova", use_container_width=True):
-        st.session_state.gerar_resumo = True
-
-# Abas principais
-tab1, tab2, tab3 = st.tabs(["🧠 Chat com as Questões da Prova", "📊 Análise Estruturada", "ℹ️ Sobre o Projeto"])
-
-with tab1:
-    if 'historico' not in st.session_state:
-        st.session_state.historico = []
-    
-    # Exibir histórico
-    for role, mensagem in st.session_state.historico:
-        with st.chat_message(role):
-            st.markdown(mensagem)
-    
-    # Entrada do usuário
-    if prompt := st.chat_input("Faça sua pergunta sobre a prova..."):
-        if not api_key:
-            st.warning("Por favor, insira sua API key da DeepSeek")
-            st.stop()
-            
-        # Adicionar ao histórico
-        st.session_state.historico.append(("user", prompt))
-        with st.chat_message("user"):
-            st.markdown(prompt)
+        if clear not in st.session_state:
+            chat = client.chats.create(model=MODEL_ID, config=types.GenerateContentConfig(
+                system_instruction="You are a helpful assistant. Your answers need to brief and concise.",))
+            prompt = st.chat_input("Enter your question here")
+            if prompt:
+                with st.chat_message("user"):
+                    st.write(prompt)
         
-        # Montar contexto completo
-        contexto = f"""
-        CONTEXTO COMPLETO DA PROVA ENADE CC 2017:
-        {documentos_completos[:12000]}... [documento completo carregado]
-        """
-        
-        # Montar mensagens para a DeepSeek
-        messages = [
-            {
-                "role": "system", 
-                "content": "Você é um especialista em análise do ENADE de Ciência da Computação. "
-                           "Responda com base nas questões da prova, do gabarito e dos padrões de resposta combinados."
-            },
-            {
-                "role": "user", 
-                "content": f"Documentação completa carregada. Pergunta: {prompt}"
-            }
-        ]
-        
-        # Chamar DeepSeek
-        try:
-            resposta_parcial = ""
-            container = st.empty()
-            with st.chat_message("assistant"):
-                for chunk in deepseek_chat(
-                    messages=messages,
-                    api_key=api_key,
-                    model=model,
-                    temperature=temperature,
-                    max_tokens=max_tokens
+                st.session_state.message += prompt
+                with st.chat_message(
+                    "model", avatar="🧞‍♀️",
                 ):
-                    if chunk:
-                        resposta_parcial += chunk
-                        container.markdown(resposta_parcial + "▌")
+                    response = chat.send_message(st.session_state.message)
+                    st.markdown(response.text) 
+                    st.sidebar.markdown(response.usage_metadata)
+                st.session_state.message += response.text
+
+    elif choice == "Chat with a PDF":
+        st.subheader("Chat with your PDF file")
+        clear = get_clear()
+        if clear:
+            if 'message' in st.session_state:
+                del st.session_state['message']
+    
+        if 'message' not in st.session_state:
+            st.session_state.message = " "
+        
+        if clear not in st.session_state:
+            uploaded_files = st.file_uploader("Choose your pdf file", type=['pdf'], accept_multiple_files=False)
+            if uploaded_files:
+                file_name=uploaded_files.name
+                file_upload = client.files.upload(file=file_name)
+                chat2 = client.chats.create(model=MODEL_ID,
+                    history=[
+                        types.Content(
+                            role="user",
+                            parts=[
+    
+                                    types.Part.from_uri(
+                                        file_uri=file_upload.uri,
+                                        mime_type=file_upload.mime_type),
+                                    ]
+                            ),
+                        ]
+                        )
+                prompt2 = st.chat_input("Enter your question here")
+                if prompt2:
+                    with st.chat_message("user"):
+                        st.write(prompt2)
             
-            container.markdown(resposta_parcial)
-            st.session_state.historico.append(("assistant", resposta_parcial))
+                    st.session_state.message += prompt2
+                    with st.chat_message(
+                        "model", avatar="🧞‍♀️",
+                    ):
+                        response2 = chat2.send_message(st.session_state.message)
+                        st.markdown(response2.text)
+                        st.sidebar.markdown(response2.usage_metadata)
+                    st.session_state.message += response2.text
+                    
+    elif choice == "Chat with many PDFs":
+        st.subheader("Chat with your PDF file")
+        clear = get_clear()
+        if clear:
+            if 'message' in st.session_state:
+                del st.session_state['message']
+    
+        if 'message' not in st.session_state:
+            st.session_state.message = " "
+        
+        if clear not in st.session_state:
+        
+            uploaded_files2 = st.file_uploader("Choose 1 or more files",  type=['pdf'], accept_multiple_files=True)
+               
+            if uploaded_files2:
+                merger = PdfMerger()
+                for file in uploaded_files2:
+                        merger.append(file)
+    
+                fullfile = "merged_all_files.pdf"
+                merger.write(fullfile)
+                merger.close()
+
+                file_upload = client.files.upload(file=fullfile) 
+                chat2b = client.chats.create(model=MODEL_ID,
+                    history=[
+                        types.Content(
+                            role="user",
+                            parts=[
+    
+                                    types.Part.from_uri(
+                                        file_uri=file_upload.uri,
+                                        mime_type=file_upload.mime_type),
+                                    ]
+                            ),
+                        ]
+                        )
+                prompt2b = st.chat_input("Enter your question here")
+                if prompt2b:
+                    with st.chat_message("user"):
+                        st.write(prompt2b)
+            
+                    st.session_state.message += prompt2b
+                    with st.chat_message(
+                        "model", avatar="🧞‍♀️",
+                    ):
+                        response2b = chat2b.send_message(st.session_state.message)
+                        st.markdown(response2b.text)
+                        st.sidebar.markdown(response2b.usage_metadata)
+                    st.session_state.message += response2b.text
+            
+    elif choice == "Chat with an image":
+        st.subheader("Chat with your PDF file")
+        clear = get_clear()
+        if clear:
+            if 'message' in st.session_state:
+                del st.session_state['message']
+    
+        if 'message' not in st.session_state:
+            st.session_state.message = " "
+        
+        if clear not in st.session_state:
+            uploaded_files2 = st.file_uploader("Choose your PNG or JPEG file",  type=['png','jpg'], accept_multiple_files=False)
+            if uploaded_files2:
+                file_name2=uploaded_files2.name
+                file_upload = client.files.upload(file=file_name2)
+                chat3 = client.chats.create(model=MODEL_ID,
+                    history=[
+                        types.Content(
+                            role="user",
+                            parts=[
+    
+                                    types.Part.from_uri(
+                                        file_uri=file_upload.uri,
+                                        mime_type=file_upload.mime_type),
+                                    ]
+                            ),
+                        ]
+                        )
+                prompt3 = st.chat_input("Enter your question here")
+                if prompt3:
+                    with st.chat_message("user"):
+                        st.write(prompt3)
+            
+                    st.session_state.message += prompt3
+                    with st.chat_message(
+                        "model", avatar="🧞‍♀️",
+                    ):
+                        response3 = chat3.send_message(st.session_state.message)
+                        st.markdown(response3.text)
+                    st.session_state.message += response3.text
                 
-        except Exception as e:
-            st.error(f"Erro na geração: {str(e)}")
+    elif choice == "Chat with audio":
+        st.subheader("Chat with your audio file")
+        clear = get_clear()
+        if clear:
+            if 'message' in st.session_state:
+                del st.session_state['message']
+    
+        if 'message' not in st.session_state:
+            st.session_state.message = " "
+        
+        if clear not in st.session_state:
+            uploaded_files3 = st.file_uploader("Choose your mp3 or wav file",  type=['mp3','wav'], accept_multiple_files=False)
+            if uploaded_files3:
+                file_name3=uploaded_files3.name
+                file_upload = client.files.upload(file=file_name3)
+                chat4 = client.chats.create(model=MODEL_ID,
+                    history=[
+                        types.Content(
+                            role="user",
+                            parts=[
+    
+                                    types.Part.from_uri(
+                                        file_uri=file_upload.uri,
+                                        mime_type=file_upload.mime_type),
+                                    ]
+                            ),
+                        ]
+                        )
+                prompt5 = st.chat_input("Enter your question here")
+                if prompt5:
+                    with st.chat_message("user"):
+                        st.write(prompt5)
             
-    # Gerar resumo automático se solicitado
-    if st.session_state.get('gerar_resumo'):
-        with st.spinner("Gerando resumo da prova..."):
-            messages = [
-                {
-                    "role": "system", 
-                    "content": "Gere um resumo estruturado da prova do ENADE CC 2017 com base nos documentos carregados."
-                },
-                {
-                    "role": "user", 
-                    "content": f"Documentos completos carregados. Gere um resumo com:\n"
-                               "- Principais tópicos avaliados\n"
-                               "- Distribuição de questões por área\n"
-                               "- Análise pedagógica geral\n"
-                               "Formato: Markdown com títulos"
-                }
-            ]
+                    st.session_state.message += prompt5
+                    with st.chat_message(
+                        "model", avatar="🧞‍♀️",
+                    ):
+                        response4 = chat4.send_message(st.session_state.message)
+                        st.markdown(response4.text)
+                    st.session_state.message += response4.text
+
+    elif choice == "Chat with video":
+        st.subheader("Chat with your video file")
+        clear = get_clear()
+        if clear:
+            if 'message' in st.session_state:
+                del st.session_state['message']
+    
+        if 'message' not in st.session_state:
+            st.session_state.message = " "
+        
+        if clear not in st.session_state:
+            uploaded_files4 = st.file_uploader("Choose your mp4 or mov file",  type=['mp4','mov'], accept_multiple_files=False)
             
-            resposta_parcial = ""
-            container = st.empty()
-            for chunk in deepseek_chat(
-                messages=messages,
-                api_key=api_key,
-                model=model,
-                temperature=0.1,  # Mais preciso
-                max_tokens=1500
-            ):
-                if chunk:
-                    resposta_parcial += chunk
-                    container.markdown(resposta_parcial + "▌")
+            if uploaded_files4:
+                file_name4=uploaded_files4.name
+                video_file = client.files.upload(file=file_name4)
+                while video_file.state == "PROCESSING":
+                    time.sleep(10)
+                    video_file = client.files.get(name=video_file.name)
+                
+                if video_file.state == "FAILED":
+                  raise ValueError(video_file.state)
+                
+                chat5 = client.chats.create(model=MODEL_ID,
+                    history=[
+                        types.Content(
+                            role="user",
+                            parts=[
+    
+                                    types.Part.from_uri(
+                                        file_uri=video_file.uri,
+                                        mime_type=video_file.mime_type),
+                                    ]
+                            ),
+                        ]
+                        )
+                prompt4 = st.chat_input("Enter your question here")
+                if prompt4:
+                    with st.chat_message("user"):
+                        st.write(prompt4)
             
-            container.markdown(resposta_parcial)
-            st.session_state.historico.append(("assistant", resposta_parcial))
-            st.session_state.gerar_resumo = False
-
-with tab2:
-    st.header("Análise Pedagógica das 35 Questões")
-    
-    # Dados de exemplo (seriam extraídos automaticamente na versão final)
-    dados_questoes = pd.DataFrame({
-        'Questão': [f"Q{i}" for i in range(1, 36)],
-        'Tema Principal': [
-            'Interpretação Gráfica', 'Agricultura Sustentável', 'Cálculo Energético',
-            'Crítica de Mídia', 'Inovação Agrícola', 'Sociologia da Imigração',
-            'Patrimônio Cultural', 'ODS', 'Estruturas de Dados', 'Padrões de Projeto',
-            'POO', 'Arquitetura', 'Lógica Digital',
-            'Matemática Discreta', 'Segurança Cibernética',
-            'Ética Profissional', 'Tecnologia Educacional', 'Algoritmos',
-            'Modelagem de Dados', 'Protocolos', 'Lógica Formal',
-            'Otimização', 'Teoria da Computação', 'Grafos',
-            'Complexidade', 'Processamento Visual',
-            'Renderização', 'Gestão Ágil', 'Gerência de Memória',
-            'Análise Sintática', 'Concorrência', 'Sistemas Inteligentes',
-            'Recursividade', 'Normalização', 'Deadlock'
-        ],
-        'Área de Conhecimento': [
-            'Matemática', 'Sociedade', 'Física Aplicada',
-            'Humanidades', 'Interdisciplinar', 'Sociedade',
-            'Cultura', 'Sociedade', 'Algoritmos',
-            'Eng. Software', 'Programação', 'Hardware',
-            'Hardware', 'Matemática', 'Redes',
-            'Ética', 'Educação', 'Algoritmos',
-            'Banco de Dados', 'Redes', 'Lógica',
-            'Algoritmos', 'Teoria', 'Algoritmos',
-            'Algoritmos', 'Computação Gráfica',
-            'Computação Gráfica', 'Eng. Software', 'Sistemas',
-            'Compiladores', 'Sistemas', 'IA',
-            'Algoritmos', 'Banco de Dados', 'Sistemas'
-        ]
-    })
-    
-    # Análise de distribuição
-    col1, col2 = st.columns(2)
-    with col1:
-        st.metric("Total de Questões", 35)
-        st.metric("Questões de Algoritmos", 8)
-    with col2:
-        st.metric("Questões de Sociedade", 7)
-        st.metric("Questões de Sistemas", 6)
-    
-    st.dataframe(dados_questoes, height=500, use_container_width=True)
-    
-    # Filtros
-    st.subheader("Filtrar Questões")
-    area_selecionada = st.selectbox("Área de Conhecimento", 
-                                   options=['Todas'] + sorted(dados_questoes['Área de Conhecimento'].unique()))
-    
-    if area_selecionada != 'Todas':
-        df_filtrado = dados_questoes[dados_questoes['Área de Conhecimento'] == area_selecionada]
-        st.dataframe(df_filtrado, height=300)
-        st.metric(f"Questões de {area_selecionada}", len(df_filtrado))
-
-with tab3:
-    st.header("Sobre a Análise Integrada")
-    st.markdown("""
-    ### **Metodologia de Análise Combinada**
-    O sistema utiliza os três documentos fundamentais em conjunto:
-    1. **Prova Completa** - Base das questões
-    2. **Gabarito Oficial** - Respostas corretas
-    3. **Padrões de Resposta** - Critérios de avaliação
-    
-    ### **Vantagens da Abordagem:**
-    - 🔗 Contexto completo para análise
-    - 🔍 Maior precisão nas respostas
-    - 📈 Visão pedagógica integrada
-    - ⚡ Eficiência na interpretação
-    
-    ### Fluxo de Processamento:
-    ```mermaid
-    graph TD
-    A[Prova] --> C[Contexto Unificado]
-    B[Gabarito] --> C
-    D[Padrões] --> C
-    C --> E{Análise Pedagógica}
-    E --> F[Chat Interativo]
-    E --> G[Relatórios]
-    ```
-    """)
-    
-    st.divider()
-    st.subheader("Modelos DeepSeek Utilizados")
-    st.markdown("""
-    | Modelo | Contexto | Melhor Para | 
-    |--------|----------|-------------|
-    | **deepseek-chat** | 128K tokens | Análise geral e pedagógica |
-    | **deepseek-coder** | 128K tokens | Questões técnicas e de programação |
-    """)
-
-# Rodapé
-st.divider()
-st.caption("Sistema Integrado ENADE CC 2017 | DAIA-INF| DeepSeek API 2025")
+                    st.session_state.message += prompt4
+                    with st.chat_message(
+                        "model", avatar="🧞‍♀️",
+                    ):
+                        response5 = chat5.send_message(st.session_state.message)
+                        st.markdown(response5.text)
+                    st.session_state.message += response5.text
+                    
+                
+if __name__ == '__main__':
+    setup_page()
+    api_key = os.environ.get('GOOGLE_API_KEY')
+    client = genai.Client(api_key=api_key)
+    MODEL_ID = "gemini-2.0-flash-001"
+    main()
