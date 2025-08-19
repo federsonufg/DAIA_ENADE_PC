@@ -1,8 +1,5 @@
 #pip install google-genai
 
-#https://blog.streamlit.io/best-practices-for-building-genai-apps-with-streamlit/
-# From GitHub: 
-
 import streamlit as st, os, time
 from google import genai
 from google.genai import types
@@ -303,6 +300,5 @@ if __name__ == '__main__':
     setup_page()
     api_key = os.environ.get('GOOGLE_API_KEY')
     client = genai.Client(api_key=api_key)
-    #MODEL_ID = "gemini-2.0-flash-001"
-    MODEL_ID = "gemini-2.5-flash-lite"
+    MODEL_ID = "gemini-2.0-flash-001"
     main()
